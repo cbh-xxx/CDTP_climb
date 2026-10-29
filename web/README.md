@@ -24,7 +24,7 @@
 
 ## 工程位置（2026-10-29更新：统一目录更名为demo）
 
-前端完整工程现位于 `D:\job_haunting\product_manager\vibe_coding_product1\demo\web`，本文位于 `demo/web/README.md`。统一工程目录为 `demo/`，后续后端在 `demo/backend/` 建立，与前端并列；产品文档和设计产物继续位于项目根目录的 `docs/`、`outputs/`。不复制或重新初始化前端，不新增根目录npm工作区。
+前端完整工程现位于 `D:\job_haunting\product_manager\vibe_coding_product1\demo\web`，本文位于 `demo/web/README.md`。统一工程目录为 `demo/`，后端已从根目录迁移至 [demo/backend/](../backend/README.md)，与前端并列、独立维护依赖和锁文件；后端账户及快照接口尚未接通前端账户页面。产品文档和设计产物继续位于项目根目录的 `docs/`、`outputs/`。不复制或重新初始化前端，不新增根目录npm工作区。
 
 迁移保留源码、素材、锁文件、依赖及已有构建与测试产物。源码内部相对引用、Vite及Playwright相对配置保持原样。已有构建与测试产物仅为历史产物，不代表本次路径迁移已通过运行验证。原终端／开发进程需要从新目录重新启动；旧web及app/web目录可能仍被原进程占用或重新生成.vite缓存；实际工程已移至demo/web。关闭旧开发服务和旧目录终端后，可清理旧目录残留，不要删除demo/web。
 
