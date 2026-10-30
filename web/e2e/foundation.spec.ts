@@ -83,14 +83,61 @@ for (const viewport of [{ width: 1440, height: 1024 }, { width: 1280, height: 72
         overlap: overview.right > recent.left && overview.bottom > recent.top,
         recentBottom: recent.bottom, imageSizes: [...document.images].map(img => ({ ok: img.complete && img.naturalWidth > 0, width: img.clientWidth, height: img.clientHeight })) };
     });
-    expect(layout.scrollX).toBe(false); expect(layout.scrollY).toBe(false); expect(layout.overlap).toBe(false);
+    expect(layout.scrollX).toBe(false); expect(layout.scrollY).toBe(true); expect(layout.overlap).toBe(false);
     expect(layout.recentBottom).toBeLessThanOrEqual(viewport.height);
     expect(layout.imageSizes.every(img => img.ok && img.width === 24 && img.height === 24)).toBe(true);
+    const account = page.getByRole('button', { name: '账户', exact: true });
+    const settings = page.getByRole('button', { name: '设置', exact: true });
+    const accountBox = await account.boundingBox(), settingsBox = await settings.boundingBox();
+    expect(accountBox!.width).toBe(48); expect(accountBox!.height).toBe(48);
+    expect(accountBox!.x).toBe(settingsBox!.x); expect(accountBox!.y - settingsBox!.y - settingsBox!.height).toBe(12);
+    await account.click(); await expect(page.getByRole('dialog', { name: '账户与云端保存' })).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(account).toBeFocused();
+    const footer = page.getByRole('contentinfo', { name: '备案信息' });
+    expect((await footer.boundingBox())!.y).toBeGreaterThanOrEqual(viewport.height);
+    await expect(footer).not.toBeInViewport();
+    await page.mouse.move(8, viewport.height - 8); await page.mouse.wheel(0, viewport.height);
+    await expect(footer).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await page.mouse.wheel(0, -viewport.height); await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     if (test.info().project.name === 'chrome' && viewport.width === 1440) {
-      await page.screenshot({ path: 'test-results/p01.png' });
+      await page.screenshot({ path: test.info().outputPath('p01.png') });
     }
     await page.getByRole('button', { name: '设置', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('button', { name: /账户/ })).toHaveCount(0);
     const bounds = await page.getByRole('dialog').boundingBox();
     expect(bounds!.y).toBeGreaterThanOrEqual(0); expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
   });
 }
+
+test('各主页面共享屏外备案区、外链新标签与返回时外层滚动复位', async ({ page, context }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: '尚未登顶' })).toBeVisible();
+  const footer = page.getByRole('contentinfo', { name: '备案信息' });
+  const links = [
+    { name: '蜀ICP备2026066653号', url: 'https://beian.miit.gov.cn/#/Integrated/index' },
+    { name: '蜀公安备案号：____', url: 'https://beian.mps.gov.cn/#/query/webSearch' },
+  ];
+  // 本用例只验证链接行为，不访问或依赖外部备案网站。
+  await context.route('https://beian.miit.gov.cn/**', route => route.fulfill({ contentType: 'text/html', body: '<title>备案链接验收</title>' }));
+  await context.route('https://beian.mps.gov.cn/**', route => route.fulfill({ contentType: 'text/html', body: '<title>备案链接验收</title>' }));
+  for (const item of links) {
+    const link = footer.getByRole('link', { name: item.name, exact: true });
+    await expect(link).toHaveAttribute('href', item.url);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    const popupPromise = page.waitForEvent('popup'); await link.click();
+    const popup = await popupPromise; await expect(popup).toHaveURL(item.url); await popup.close();
+  }
+  await page.getByRole('button', { name: '全部链条', exact: true }).click();
+  await expect(page.getByRole('button', { name: '账户', exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(footer).not.toBeInViewport();
+  await page.mouse.move(8, 500); await page.mouse.wheel(0, 1000); await expect(footer).toBeInViewport();
+  await page.goBack(); await expect(page.getByRole('button', { name: '账户', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.getByRole('button', { name: '攀登详情', exact: true }).click();
+  await expect(page.getByRole('button', { name: '账户', exact: true })).toHaveCount(0);
+  await expect(footer).not.toBeInViewport();
+  await page.mouse.move(8, 500); await page.mouse.wheel(0, 1000); await expect(footer).toBeInViewport();
+});

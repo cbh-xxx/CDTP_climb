@@ -327,6 +327,43 @@ button {
   flex-direction:column;
   gap:8px
 }
+.application-stage { min-height:100dvh; position:relative; }
+.home__tools { display:flex; flex-direction:column; align-items:flex-end; align-self:flex-start; gap:12px; }
+.site-footer {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+  gap:8px 24px;
+  min-height:80px;
+  padding:24px 5%;
+  background:var(--surface);
+  color:var(--muted);
+  font-size:12px;
+  line-height:20px;
+  text-align:center;
+}
+.site-footer a { color:inherit; overflow-wrap:anywhere; }
+.site-footer a:hover { color:var(--primary); }
+.account-notice {
+  position:absolute;
+  top:12px;
+  right:calc(5% + 64px);
+  z-index:30;
+  max-width:min(480px, calc(95vw - 80px));
+  padding:8px 12px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--surface);
+  font-size:14px;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+.account-content, .account-form { display:flex; flex-direction:column; gap:16px; }
+.account-content p { margin:0; overflow-wrap:anywhere; }
+.account-ack { display:flex; align-items:flex-start; gap:12px; line-height:1.6; }
+.account-ack input { width:18px; height:18px; flex:none; margin-top:4px; accent-color:var(--primary); }
+.dialog > .test-tools { position:static; flex-wrap:wrap; flex-shrink:0; gap:8px; max-height:160px; overflow:auto; }
 .field input {
   height:48px;
   width:100%;

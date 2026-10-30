@@ -11,7 +11,8 @@ export const emptySnapshot = (): Snapshot => ({chains:[],rounds:[],tasks:[],deci
 const fail = (message: string): never => { throw new ApiError(422,'INVALID_SNAPSHOT',message); };
 const integer = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
 const id = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_:.\-]{1,200}$/.test(v);
-const text = (v: unknown, max: number) => typeof v === 'string' && v.trim() === v && v.length > 0 && [...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(v)].length <= max && !/[\r\n\u0000-\u001f]/.test(v);
+const segmenter=new Intl.Segmenter('zh',{granularity:'grapheme'});
+const text = (v: unknown, max: number) => typeof v === 'string' && v.trim() === v && v.length > 0 && [...segmenter.segment(v)].length <= max && !/[\r\n\u0000-\u001f]/.test(v);
 type Rule = (v: unknown) => boolean;
 const enums = (...values: string[]): Rule => v => values.includes(v as string);
 const nullable = (rule: Rule): Rule => v => v === null || rule(v);

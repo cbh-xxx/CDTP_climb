@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Repository, HomeSnapshot } from '../data/repository';
 import type { ChainState } from '../domain/models';
 import type { ChainCommand } from '../domain/chain-commands';
@@ -10,6 +10,7 @@ import { Placeholder } from '../pages/Placeholder';
 import { ChainList, type ListVisit } from '../pages/ChainList';
 import { ChainDetail } from '../pages/ChainDetail';
 import { Button, Dialog, SoundSwitch } from '../shared/controls';
+import { SiteFooter } from '../shared/SiteFooter';
 import { ChainForm } from '../shared/ChainForm';
 import { ChainMenu } from '../shared/ChainMenu';
 import { RecordDialog, RoundSummaryDialog } from '../shared/HistoryDialogs';
@@ -25,11 +26,12 @@ import { TaskPrepare } from '../pages/TaskPrepare';
 import { TaskExecution } from '../pages/TaskExecution';
 import { TaskResult } from '../pages/TaskResult';
 import { DecisionDialog } from '../shared/DecisionDialog';
+import { AccountDialog } from '../shared/AccountDialog';
 
 type SourceRoute = { page: 'home' } | { page: 'list' } | { page: 'detail'; id: string; from: 'home' | 'list' };
 type Route = SourceRoute | { page: 'climb' } | { page: 'placeholder'; id: string } | { page: 'prepare'; id: string; reserved: boolean; source: SourceRoute } | { page: 'execute'; taskId: string } | { page: 'result'; settlementId: string };
 type Modal = { kind: 'settings' } | { kind: 'create'; from: 'home' | 'list' } | { kind: 'new-round'; id: string; from: 'home' | 'list' | 'result' }
-  | { kind: 'rules' } | { kind: 'decision'; taskId: string }
+  | { kind: 'rules' } | { kind: 'account' } | { kind: 'decision'; taskId: string }
   | { kind: 'delete'; id: string } | { kind: 'record'; taskId: string } | { kind: 'summaries'; id: string };
 const errorText = (cause: unknown) => cause instanceof Error && /[\u4e00-\u9fff]/.test(cause.message) ? cause.message : '本地数据操作失败，请重试；未确认保存成功';
 
@@ -55,8 +57,11 @@ export function App({ repository, clock = systemClock }: { repository: Repositor
 
 function ChainApplication({ repository, initial }: { repository: Repository; initial: { home: HomeSnapshot; chains: ChainState } }) {
   const [state, setState] = useState(initial.chains);
+  const [accountStatus, setAccountStatus] = useState(repository.account?.status());
+  const accountVersions = useRef({ data: accountStatus?.dataVersion, identity: accountStatus?.identityVersion });
   const [home, setHome] = useState(initial.home);
   const [route, setRoute] = useState<Route>({ page: 'home' });
+  useLayoutEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [route]);
   const [modal, setModal] = useState<Modal | null>(null);
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLButtonElement } | null>(null);
   const [visit, setVisit] = useState<ListVisit>({ scroll: 0, expanded: false });
@@ -79,6 +84,7 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.execution-actions button:not(:disabled)')?.focus({ preventScroll: true }));
   }
   function closeModal() {
+    if (repository.account?.status().busy) return;
     if (modal?.kind === 'decision') {
       if (runtime.busy) return;
       const task = state.tasks.find(item => item.id === modal.taskId);
@@ -106,6 +112,26 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
     if (message) notify(message);
   }
   useEffect(() => {
+    if (!repository.account) return;
+    return repository.account.subscribe(() => {
+      const current = repository.account!.status(); setAccountStatus(current);
+      if (current.dataVersion === accountVersions.current.data) return;
+      const identityChanged = current.identityVersion !== accountVersions.current.identity;
+      accountVersions.current = { data: current.dataVersion, identity: current.identityVersion };
+      void Promise.all([repository.readChainState(), repository.readHome()]).then(([snapshot, summary]) => {
+        if (repository.account?.status().dataVersion !== current.dataVersion) return;
+        setState(snapshot); setHome(summary);
+        if (identityChanged) {
+          setRoute({ page: 'home' }); setModal(null); setMenu(null); setVisit({ scroll: 0, expanded: false });
+          setNotice(''); clearTimeout(noticeTimer.current); clearFeedback(); resultPermit.current = null;
+          history.replaceState({ page: 'home' }, '', '#/p01');
+        }
+      }).catch(cause => notify(errorText(cause)));
+    });
+  }, [repository, clearFeedback, notify]);
+  useEffect(() => {
+    const previousScrollRestoration = history.scrollRestoration;
+    history.scrollRestoration = 'manual';
     history.replaceState({ page: 'home' }, '', `${location.pathname}${location.search}#/p01`);
     const pop = (event: PopStateEvent) => {
       let next: Route = event.state ?? { page: 'home' };
@@ -117,7 +143,8 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
     const fixtures = () => { void repository.readChainState().then(setState).catch(cause => notify(errorText(cause))); };
     const restoredPage = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
-      void repository.recoverTasks().then(() => repository.readChainState()).then(snapshot => {
+      const revalidate = repository.account?.status().account ? repository.account.reconnect().catch(() => undefined) : Promise.resolve();
+      void revalidate.then(() => repository.recoverTasks()).then(() => repository.readChainState()).then(snapshot => {
         setState(snapshot); setModal(null); setMenu(null); setNotice(''); clearFeedback(); resultPermit.current = null;
         setRoute({ page: 'home' }); history.replaceState({ page: 'home' }, '', '#/p01');
       }).catch(cause => notify(errorText(cause)));
@@ -138,6 +165,7 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
     document.addEventListener('pointerdown', unlockSound); document.addEventListener('keydown', unlockSound);
     if (__TEST_BUILD__) { window.addEventListener('climb-fixtures-loaded', fixtures); window.addEventListener('climb-test-settled', testSettled); }
     return () => {
+      history.scrollRestoration = previousScrollRestoration;
       window.removeEventListener('popstate', pop); window.removeEventListener('climb-fixtures-loaded', fixtures); window.removeEventListener('climb-test-settled', testSettled);
       window.removeEventListener('pageshow', restoredPage);
       document.removeEventListener('pointerdown', unlockSound); document.removeEventListener('keydown', unlockSound);
@@ -209,7 +237,7 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
     if (savingSound) return;
     setSavingSound(true); setSaveError('');
     try { const settings = await repository.setSound(!home.settings.soundEnabled); setHome(old => ({ ...old, settings })); }
-    catch { setSaveError('声音设置未保存，请重试。'); }
+    catch (cause) { setSaveError(repository.account?.status().pending ? '声音保存结果尚未确认，请到“账户”重试原操作。' : errorText(cause)); }
     finally { setSavingSound(false); }
   }
   const selected = route.page === 'detail' ? state.chains.find(chain => chain.id === route.id) : null;
@@ -223,15 +251,23 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
   const result = route.page === 'result' && resultPermit.current === route.settlementId ? state.settlements.find(item => item.id === route.settlementId) : null;
   const preparationChain = route.page === 'prepare' ? state.chains.find(chain => chain.id === route.id && chain.status === 'available' && state.rounds.some(round => round.id === chain.currentRoundId && round.status === 'active')) : null;
   const hasTask = activeTask(state);
+  const displayTask = executingTask?.status === 'reserved' && runtime.now >= executingTask.dueAt ? { ...executingTask, status: 'focusing' as const, accumulatedMs: 0, runningSince: executingTask.dueAt, focusStartedAt: executingTask.dueAt } : executingTask;
+  const accountBlocked = !!accountStatus && !accountStatus.writable;
+  const accountNotice = accountStatus?.busy ? '正在等待服务器确认，请勿重复操作。'
+    : accountStatus?.pending ? '有未确认操作，请回首页打开账户重试原操作。'
+    : accountStatus?.error ? `${accountStatus.error} 请回首页打开账户处理。`
+    : accountStatus?.account && !accountStatus.writable ? '当前只读，请回首页打开账户检查会话并校时。' : '';
   return <TaskActionsContext.Provider value={{ prepare, returnTask }}>
+    <div className="application-stage">
+    {accountNotice && <aside className="account-notice" role="status" aria-label="账户提示">{accountNotice}</aside>}
     {route.page === 'home' && <Home state={state} openChain={id => navigate({ page: 'detail', id, from: 'home' })} notify={notify}
       navigate={page => navigate(page === 'p02' ? { page: 'list' } : page === 'p07' ? { page: 'climb' } : { page: 'placeholder', id: page })}
-      openSettings={() => openModal({ kind: 'settings' })} openCreate={() => openModal({ kind: 'create', from: 'home' })} />}
+      openSettings={() => openModal({ kind: 'settings' })} openAccount={repository.account ? () => openModal({ kind: 'account' }) : undefined} accountBusy={accountStatus?.busy} openCreate={() => openModal({ kind: 'create', from: 'home' })} />}
     {route.page === 'climb' && <ClimbRoute state={state} back={() => navigate({ page: 'home' })} />}
     {route.page === 'list' && <ChainList state={state} visit={visit} saveVisit={setVisit} back={() => navigate({ page: 'home' })}
       create={() => openModal({ kind: 'create', from: 'list' })} open={id => navigate({ page: 'detail', id, from: 'list' })}
       newRound={id => openModal({ kind: 'new-round', id, from: 'list' })} more={showMenu} notify={notify} />}
-    {route.page === 'detail' && selected && !detailError && <ChainDetail key={selected.id} id={selected.id} state={state} busy={busy}
+    {route.page === 'detail' && selected && !detailError && <ChainDetail key={`detail:${selected.id}`} id={selected.id} state={state} busy={busy || accountBlocked}
       back={() => navigate(route.from === 'home' ? { page: 'home' } : { page: 'list' })}
       rename={name => runCommand({ type: 'rename', chainId: selected.id, name })}
       newRound={() => openModal({ kind: 'new-round', id: selected.id, from: route.from })}
@@ -239,23 +275,26 @@ function ChainApplication({ repository, initial }: { repository: Repository; ini
       summaries={() => openModal({ kind: 'summaries', id: selected.id })} notify={notify} />}
     {route.page === 'detail' && (!selected || detailError) && <main className="startup"><h1>链条暂不可用</h1><p role="alert">{detailError || '链条不存在或已被删除'}</p><Button onClick={() => navigate({ page: 'list' })}>全部链条</Button></main>}
     {route.page === 'placeholder' && <Placeholder page={route.id} goHome={() => navigate({ page: 'home' })} />}
-    {route.page === 'prepare' && preparationChain && !hasTask && <TaskPrepare key={`${route.id}:${route.reserved}`} state={state} chainId={route.id} initiallyReserved={route.reserved} busy={runtime.busy} back={() => navigate(route.source)} notify={notify} feedback={feedback} submit={command => { void runTask(command).then(outcome => { if (outcome && !outcome.aborted) navigate({ page: 'execute', taskId: command.taskId }); }); }} />}
+    {route.page === 'prepare' && preparationChain && !hasTask && <TaskPrepare key={`${route.id}:${route.reserved}`} state={state} chainId={route.id} initiallyReserved={route.reserved} busy={runtime.busy || accountBlocked} back={() => navigate(route.source)} notify={notify} feedback={feedback} submit={command => { void runTask(command).then(outcome => { if (outcome && !outcome.aborted) navigate({ page: 'execute', taskId: command.taskId }); }); }} />}
     {route.page === 'prepare' && (!preparationChain || hasTask) && <main className="startup"><p>{hasTask ? '请先处理当前任务' : '链条状态已变化，请重新准备任务。'}</p><Button onClick={hasTask ? returnTask : () => navigate({ page: 'home' })}>{hasTask ? '返回任务' : '返回首页'}</Button></main>}
-    {route.page === 'execute' && executingTask && <TaskExecution task={executingTask} state={state} now={runtime.now} busy={runtime.busy} home={() => navigate({ page: 'home' })}
+    {route.page === 'execute' && executingTask && displayTask && <TaskExecution task={displayTask} state={state} now={runtime.now} busy={runtime.busy || accountBlocked} home={() => navigate({ page: 'home' })}
       early={() => { void runTask({ type: 'early-start', taskId: executingTask.id }); }} cancel={() => { void requestDecision('cancel-request', executingTask.id); }} interrupt={() => { void requestDecision('interrupt', executingTask.id); }}
       resume={() => { void runTask({ type: 'resume', taskId: executingTask.id }); }} finish={() => { void runTask({ type: 'finish', taskId: executingTask.id }, true); }} process={() => openModal({ kind: 'decision', taskId: executingTask.id })} />}
     {route.page === 'execute' && !executingTask && <main className="startup"><p>当前任务已结束或无法恢复。</p><Button onClick={() => navigate({ page: 'home' })}>返回首页</Button></main>}
     {route.page === 'result' && result && <TaskResult result={result} state={state} home={() => navigate({ page: 'home' })} newRound={() => openModal({ kind: 'new-round', id: result.chainId, from: 'result' })} />}
     {route.page === 'result' && !result && <main className="startup"><Button onClick={() => navigate({ page: 'home' })}>返回首页</Button></main>}
+    </div>
+    <SiteFooter />
     {modal?.kind === 'decision' && decisionTask && <DecisionDialog key={decisionTask.pendingDecisionId} task={decisionTask} state={state} busy={runtime.busy} feedback={feedback} close={closeModal} notify={notify} confirm={input => { void confirmDecision(input); }} />}
     {modal?.kind === 'settings' && <Dialog title="设置" width={560} onClose={closeModal} feedback={feedback}>
-      <div className="setting-row" onClick={event => { if (!(event.target instanceof Element) || !event.target.closest('button')) void toggleSound(); }}><span>提示声音</span><SoundSwitch checked={home.settings.soundEnabled} busy={savingSound} onChange={() => void toggleSound()} /></div>
+      <div className="setting-row" onClick={event => { if (!accountBlocked && (!(event.target instanceof Element) || !event.target.closest('button'))) void toggleSound(); }}><span>提示声音</span><SoundSwitch checked={home.settings.soundEnabled} busy={savingSound || accountBlocked} onChange={() => void toggleSound()} /></div>
       <p className="muted">仅提供网页内提醒。关闭网页期间不承诺提醒，重开不补播声音。</p>
       {saveError && <p role="alert" className="error">{saveError}</p>}
-      <div className="settings-links"><Button variant="link" onClick={() => notify('当前版本暂不支持登录')}>登录</Button><Button variant="link" onClick={() => openModal({ kind: 'rules' })}>规则说明</Button></div>
+      <div className="settings-links"><Button variant="link" onClick={() => openModal({ kind: 'rules' })}>规则说明</Button></div>
     </Dialog>}
+    {modal?.kind === 'account' && repository.account && accountStatus && <AccountDialog access={repository.account} status={accountStatus} close={closeModal} done={() => { setModal(null); notify('服务器已确认账户操作'); }} />}
     {modal?.kind === 'rules' && <Dialog key="rules" title="规则说明" width={672} onClose={closeModal} onEscape={() => openModal({ kind: 'settings' })} feedback={feedback}><Rules back={() => openModal({ kind: 'settings' })} /></Dialog>}
-    {(modal?.kind === 'create' || modal?.kind === 'new-round') && <ChainForm key={modal.kind === 'create' ? 'create' : modal.id} state={state} chainId={modal.kind === 'new-round' ? modal.id : undefined} busy={busy} feedback={feedback} notify={notify} close={closeModal} save={command => {
+    {(modal?.kind === 'create' || modal?.kind === 'new-round') && <ChainForm key={`form:${modal.kind === 'create' ? 'create' : modal.id}`} state={state} chainId={modal.kind === 'new-round' ? modal.id : undefined} busy={busy || accountBlocked} feedback={feedback} notify={notify} close={closeModal} save={command => {
       const from = modal.from;
       void runCommand(command).then(saved => { if (saved) navigate({ page: 'detail', id: command.chainId, from: from === 'result' ? 'home' : from }); });
     }} />}

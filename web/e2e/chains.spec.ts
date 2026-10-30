@@ -38,7 +38,9 @@ test('归档恢复、同名校验、删除取消和永久删除', async ({ page 
   await expect(page.getByRole('heading', { name: '全部链条', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '新建链条', exact: true }).click();
   await page.getByLabel('链名称', { exact: true }).fill(' 阅读 ');
-  await page.getByRole('button', { name: '创建', exact: true }).click();
+  const duplicateCreate = page.getByRole('button', { name: '创建', exact: true });
+  await expect(duplicateCreate).toHaveAttribute('aria-disabled','true');
+  await duplicateCreate.click({force:true}); // Deliberately exercise the disabled-reason click handler.
   await expect(page.getByRole('status')).toContainText('链名称已存在');
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '已归档', exact: true }).click();
@@ -60,6 +62,7 @@ test('归档恢复、同名校验、删除取消和永久删除', async ({ page 
   await page.reload(); await expect(page.getByRole('button', { name: '阅读', exact: true })).toHaveCount(0);
 });
 test('隔离夹具：历史、继承、返回列表位置和长内容', async ({ page }) => {
+  const duplicateKeys: string[]=[];page.on('console',message=>{if(message.text().includes('same key'))duplicateKeys.push(message.text());});
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('http://127.0.0.1:5174');
   await expect(page.getByRole('heading', { name: '尚未登顶' })).toBeVisible();
@@ -88,4 +91,5 @@ test('隔离夹具：历史、继承、返回列表位置和长内容', async ({
   await page.getByRole('tab', { name: '允许判例', exact: true }).click();
   await expect(page.getByRole('tabpanel')).toContainText('紧急事务需要立即处理');
   await expect(page.getByRole('tabpanel')).not.toContainText('接听必须及时回应的电话');
+  expect(duplicateKeys).toEqual([]);
 });

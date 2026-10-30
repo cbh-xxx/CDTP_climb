@@ -1,0 +1,5 @@
+{
+  "ReleaseDir": "C:\\Climb\\releases\\climb-RELEASE-ID",
+  "EnvFile": "C:\\Climb\\config\\runtime.env",
+  "NodeExe": "C:\\Program Files\\nodejs\\node.exe"
+}

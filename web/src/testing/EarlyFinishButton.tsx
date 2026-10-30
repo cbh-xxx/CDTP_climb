@@ -4,16 +4,18 @@ import type { Task } from '../domain/models';
 import { effectiveMs } from '../domain/time';
 import { Button } from '../shared/controls';
 import { BrowserTestClock } from './browser-clock';
+import { AccountClock } from '../data/account-clock';
 
 /** Detachable test-only control. It advances the injected clock, never changes task data. */
 export default function EarlyFinishButton({ task, busy, finish }: {
   task: Task; busy: boolean; finish(): void;
 }) {
-  const clock = useClock();
+  const injected = useClock();
+  const clock = injected instanceof AccountClock ? injected.localSource() : injected;
   const [error, setError] = useState('');
   if (!(clock instanceof BrowserTestClock) || task.status !== 'focusing') return null;
 
-  return <aside aria-label="专注测试操作" style={{ position: 'fixed', top: 24, right: 24, zIndex: 2, maxWidth: 240 }}>
+  return <aside aria-label="专注测试操作" style={{ position: 'fixed', top: 72, right: 24, zIndex: 2, maxWidth: 240 }}>
     <Button variant="secondary" disabled={busy} title="推进测试时钟至达标，再按正常流程完成任务" onClick={() => {
       setError('');
       try {

@@ -85,3 +85,15 @@ test('第二账户真实隔离、服务重开会话保留、密钥轮换失效',
     assert.equal((await app.inject({url:'/v1/auth/session',headers:{cookie}})).statusCode,401);
   } finally { await app.close(); rmSync(dir,{recursive:true,force:true}); }
 });
+test('测试环境Cookie不读取或覆盖普通环境会话', async () => {
+  const dir = mkdtempSync(join(tmpdir(),'climb-cookie-test-'));
+  const app = await buildApp({host:'127.0.0.1',port:3002,origin,secret:'x'.repeat(32),dataDir:dir,secure:false,sessionMs:10000,cookieName:'climb_test_session'});
+  try {
+    const registered = await app.inject({method:'POST',url:'/v1/auth/register',headers:{origin,cookie:'session=ordinary_session_sentinel'},payload});
+    assert.equal(registered.statusCode,201);assert.match(String(registered.headers['set-cookie']),/^climb_test_session=/);
+    const cookie = String(registered.headers['set-cookie']).split(';')[0];
+    assert.equal((await app.inject({url:'/v1/auth/session',headers:{cookie}})).statusCode,200);
+    assert.equal((await app.inject({url:'/v1/auth/session',headers:{cookie:cookie.replace('climb_test_session=','session=')}})).statusCode,401);
+    const logout=await app.inject({method:'POST',url:'/v1/auth/logout',headers:{origin,cookie},payload:{}});assert.match(String(logout.headers['set-cookie']),/^climb_test_session=/);
+  } finally {await app.close();rmSync(dir,{recursive:true,force:true});}
+});

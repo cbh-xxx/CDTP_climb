@@ -1,0 +1,13 @@
+import {pathToFileURL} from 'node:url';
+import {join} from 'node:path';
+import {monitorEventLoopDelay} from 'node:perf_hooks';
+const release=process.env.DRILL_RELEASE;
+const {buildApp}=await import(pathToFileURL(join(release,'backend/dist/app.js')));
+const {config}=await import(pathToFileURL(join(release,'backend/dist/config.js')));
+const {authPressure}=await import(pathToFileURL(join(release,'backend/dist/auth.js')));
+const app=await buildApp(config(),Date.now,true);
+const delay=monitorEventLoopDelay({resolution:10});delay.enable();
+let rss=0,heap=0;const sample=()=>{const m=process.memoryUsage();rss=Math.max(rss,m.rss);heap=Math.max(heap,m.heapUsed);};
+const timer=setInterval(sample,20);sample();
+process.on('message',async message=>{if(message!=='stop')return;clearInterval(timer);sample();await app.close();process.send?.({type:'metrics',rss,heap,eventLoopP99Ms:delay.percentile(99)/1e6,auth:authPressure()});delay.disable();process.disconnect();});
+await app.listen({host:'127.0.0.1',port:Number(process.env.PORT)});process.send?.({type:'ready'});

@@ -13,7 +13,7 @@ export function Button({ variant = 'primary', unavailableReason, onFeedback, onC
       onClick?.(event);
     }}>{children}</button>;
 }
-export function Icon({ name }: { name: 'plus' | 'right' | 'settings' | 'left' | 'more' | 'down' | 'edit' | 'home' }) {
+export function Icon({ name }: { name: 'plus' | 'right' | 'settings' | 'left' | 'more' | 'down' | 'edit' | 'home' | 'user' }) {
   const size = name === 'edit' ? 26.6 : 24;
   return <img className={`icon ${name === 'edit' ? 'icon--edit' : ''}`} src={`/icons/${name}.svg`} alt="" width={size} height={size} />;
 }

@@ -11,8 +11,9 @@ import { taskProgress } from '../domain/task-rules';
 import { routePeaks } from '../domain/route';
 import { useSummitTransition } from '../shared/useSummitTransition';
 
-export function Home({ navigate, openSettings, openCreate, state, openChain, notify }: {
+export function Home({ navigate, openSettings, openAccount, accountBusy, openCreate, state, openChain, notify }: {
   navigate(page: string): void; openSettings(): void; openCreate(): void;
+  openAccount?: () => void; accountBusy?: boolean;
   state: ChainState; openChain(id: string): void; notify(message: string): void;
 }) {
   const clock = useClock();
@@ -28,7 +29,10 @@ export function Home({ navigate, openSettings, openCreate, state, openChain, not
   return <main className="home">
     <div className="landscape mountain-landscape" style={{ backgroundImage: `url("${sceneForLevel(transition.display).image}")` }} aria-hidden="true" /><div className="landscape panel-mist" aria-hidden="true" />
     <header className="home__header"><span className="brand">Climb</span>
-      <Button variant="icon" aria-label="设置" onClick={openSettings}><Icon name="settings" /></Button></header>
+      <div className="home__tools">
+        <Button variant="icon" aria-label="设置" onClick={openSettings}><Icon name="settings" /></Button>
+        {openAccount && <Button variant="icon" aria-label="账户" title="账户" disabled={accountBusy} onClick={openAccount}><Icon name="user" /></Button>}
+      </div></header>
     <section className="overview" aria-labelledby="summit-title">
       <h1 id="summit-title">{peak?.shortName ?? '尚未登顶'}</h1>
       {!transition.playing && peak && transition.display < 30 && <p className="muted">{peak.level === 1 ? '土卫六，赤道附近' : peak.location}</p>}

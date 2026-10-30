@@ -102,7 +102,7 @@ describe('链条事务与持久化', () => {
     const before = await repository.readChainState();
     // Obtain the fake implementation's object-store prototype without touching user data.
     const db = await requestResult(factory.open('chain-test'));
-    const prototype = Object.getPrototypeOf(db.transaction('chains').objectStore('chains'));
+    const prototype = Object.getPrototypeOf(db.transaction('chains').objectStore('chains')) as IDBObjectStore;
     const original = prototype.delete;
     const deletion = vi.spyOn(prototype, 'delete').mockImplementation(function (this: IDBObjectStore, key: IDBValidKey | IDBKeyRange) {
       if (this.name === 'rounds') throw new DOMException('isolated write fault', 'QuotaExceededError');

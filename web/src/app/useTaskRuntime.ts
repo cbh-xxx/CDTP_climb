@@ -36,11 +36,12 @@ export function useTaskRuntime({ repository, state, update, onEvents, onError, o
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('climb-clock-changed', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [clock]);
   useEffect(() => {
+    if (repository.account && !repository.account.status().writable) return;
     const task = activeTask(state);
     if (!task) return;
     const due = task.status === 'reserved' && now >= task.dueAt;
     const goal = task.status === 'focusing' && !task.goalNotified && effectiveMs(task, { now: () => now }) >= task.plannedMinutes * 60_000;
     if (due || goal) void execute({ type: 'tick', taskId: task.id });
-  }, [now, state, execute]);
+  }, [now, state, execute, repository]);
   return { now, busy, execute };
 }

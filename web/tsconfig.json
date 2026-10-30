@@ -6,5 +6,5 @@
     "noFallthroughCasesInSwitch": true, "noUncheckedIndexedAccess": true,
     "skipLibCheck": true, "noEmit": true, "types": ["vite/client", "node"]
   },
-  "include": ["src", "e2e", "*.ts"]
+  "include": ["src", "e2e", "account-e2e", "deployment-e2e", "*.ts"]
 }

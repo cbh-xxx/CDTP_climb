@@ -3,8 +3,9 @@ import type { ChainState, Settings, StoreRecords } from '../domain/models';
 import { planChainCommand, type ChainCommand } from '../domain/chain-commands';
 import { planTaskCommand, planTaskRecovery, type TaskChanges, type TaskCommand, type TaskOutcome } from '../domain/task-commands';
 import type { Repository, StoreName, Write } from './repository';
+import type { AccountControl } from './account-types';
 
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const databaseName = (testing: boolean) => testing ? 'climb-testing' : 'climb-local';
 const businessStores: StoreName[] = ['chains', 'rounds', 'tasks', 'decisions', 'precedents', 'roundPrecedents', 'settlements', 'climbRecords', 'occupancy'];
 const allStores: StoreName[] = [...businessStores, 'metadata', 'settings', 'interruptions', 'taskContents'];
@@ -73,6 +74,7 @@ export function openDatabase(name: string, factory: IDBFactory = indexedDB): Pro
           cursor.continue();
         };
       }
+      if (event.oldVersion < 5) db.createObjectStore('account-control', { keyPath: 'id' });
     };
     request.onblocked = () => {
       abandoned = true;
@@ -157,6 +159,25 @@ export class IndexedDbRepository implements Repository {
   async readChainState() {
     const tx = this.connection().transaction(allStores, 'readonly');
     return readState(tx);
+  }
+  async readControl(): Promise<AccountControl> {
+    const tx = this.connection().transaction('account-control', 'readonly');
+    return (await requestResult<AccountControl | undefined>(tx.objectStore('account-control').get('account'))) ?? { id: 'account', account: null };
+  }
+  async saveControl(control: AccountControl) {
+    const tx = this.connection().transaction('account-control', 'readwrite');
+    const done = transactionDone(tx); tx.objectStore('account-control').put(control); await done;
+  }
+  async replaceState(state: ChainState, control: AccountControl) {
+    const tx = this.connection().transaction([...allStores, 'account-control'], 'readwrite');
+    const done = transactionDone(tx); void done.catch(() => undefined);
+    try {
+      for (const store of allStores) {
+        tx.objectStore(store).clear();
+        for (const row of state[store]) tx.objectStore(store).put(row);
+      }
+      tx.objectStore('account-control').put(control); await done;
+    } catch (error) { try { tx.abort(); } catch { /* already inactive */ } await done.catch(() => undefined); throw error; }
   }
   async executeChainCommand(command: ChainCommand) {
     const tx = this.connection().transaction(allStores, 'readwrite');

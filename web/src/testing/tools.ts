@@ -3,6 +3,9 @@ import { IndexedDbRepository, databaseName } from '../data/indexed-db';
 import { fixtureWrites } from './fixtures';
 import { activeTask } from '../domain/chains';
 import { effectiveMs } from '../domain/time';
+import type { Repository } from '../data/repository';
+let current: Repository | undefined;
+export function bindTestRepository(repository: Repository) { current = repository; }
 export function installTestTools() {
   document.body.classList.add('test-mode');
   const clock = new BrowserTestClock();
@@ -13,20 +16,22 @@ export function installTestTools() {
   label.textContent = '隔离测试模式';
   const button = document.createElement('button');
   button.textContent = '测试时钟推进5分钟';
-  button.onclick = () => { clock.advance(300_000); label.textContent = `隔离测试模式 · ${clock.now()}`; };
+  const accountLocked = () => !!current?.account?.status().account || !!current?.account?.status().pending;
+  button.onclick = () => { if (accountLocked()) { label.textContent = '账户模式使用服务器时间，不使用游客加速'; return; } clock.advance(300_000); label.textContent = `隔离测试模式 · ${clock.now()}`; };
   panel.append(label, button);
   for (const [text, amount] of [['推进1秒', 1000], ['推进29分59秒', 1_799_000]] as const) {
     const advance = document.createElement('button'); advance.textContent = text;
-    advance.onclick = () => { clock.advance(amount); label.textContent = '隔离测试模式 · 时钟已推进'; };
+    advance.onclick = () => { if (accountLocked()) return; clock.advance(amount); label.textContent = '隔离测试模式 · 时钟已推进'; };
     panel.append(advance);
   }
   for (const [text, rate] of [['正常速度', 1], ['60倍时钟', 60]] as const) {
     const speed = document.createElement('button'); speed.textContent = text;
-    speed.onclick = () => { clock.setRate(rate); label.textContent = `隔离测试模式 · ${rate}倍`; };
+    speed.onclick = () => { if (accountLocked()) return; clock.setRate(rate); label.textContent = `隔离测试模式 · ${rate}倍`; };
     panel.append(speed);
   }
   const success = document.createElement('button'); success.textContent = '测试快速成功';
   success.onclick = async () => {
+    if (accountLocked()) { label.textContent = '账户模式不绕过服务器校时及保存'; return; }
     success.disabled = true;
     const repository = new IndexedDbRepository(databaseName(true), clock);
     try {
@@ -45,6 +50,7 @@ export function installTestTools() {
     const load = document.createElement('button');
     load.textContent = text;
     load.onclick = async () => {
+      if (accountLocked()) { label.textContent = '账户或未确认操作存在时不能加载游客夹具'; return; }
       load.disabled = true;
       const repository = new IndexedDbRepository(databaseName(true), clock);
       try {

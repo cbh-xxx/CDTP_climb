@@ -5,10 +5,16 @@ import { snapshotService, writeRequest, canonical } from './snapshot.ts';
 import { ApiError } from './errors.ts';
 export { ApiError } from './errors.ts';
 const options = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+const pressure={active:0,peak:0,rejected:0};
+export const authPressure=()=>({...pressure,limit:2});
 async function hash(password: string, salt = randomBytes(16).toString('hex')) {
-  const key = await new Promise<Buffer>((resolve, reject) => scryptCallback(password, salt, 64, options, (error, key) => error ? reject(error) : resolve(key)));
-  return `scrypt$32768$8$1$${salt}$${key.toString('hex')}`;
+  if(pressure.active>=2){pressure.rejected++;throw new ApiError(503,'AUTH_BUSY','认证服务繁忙，请稍后重试原操作');}
+  pressure.active++;pressure.peak=Math.max(pressure.peak,pressure.active);
+  try{const key = await new Promise<Buffer>((resolve, reject) => scryptCallback(password, salt, 64, options, (error, key) => error ? reject(error) : resolve(key)));return `scrypt$32768$8$1$${salt}$${key.toString('hex')}`;}
+  finally{pressure.active--;}
 }
+const dummyHash=hash('dummy-password-for-timing');
+export const prepareAuth=()=>dummyHash.then(()=>undefined);
 async function verify(password: string, stored: string) {
   const parts = stored.split('$');
   const candidate = await hash(password, parts[4]);
@@ -23,7 +29,7 @@ export function credentials(body: unknown) {
 export function authService(db: Db, config: Config, now: () => number) {
   const snapshots = snapshotService(db, now);
   const digest = (token: string) => createHmac('sha256', config.secret).update(token).digest('hex');
-  const dummy = hash('dummy-password-for-timing');
+  const dummy = dummyHash;
   function issue(accountId: string) {
     const token = randomBytes(32).toString('base64url'); const expiresAt = now() + config.sessionMs;
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now());
